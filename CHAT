@@ -1,0 +1,144 @@
+import os
+from flask import Flask, request, jsonify
+from twilio.rest import Client
+
+app = Flask(__name__)
+
+# Twilio WhatsApp API credentials
+account_sid = os.environ.get('TWILIO_ACCOUNT_SID')
+auth_token = os.environ.get('TWILIO_AUTH_TOKEN')
+client = Client(account_sid, auth_token)
+
+@app.route('/send_message', methods=['POST'])
+def send_message():
+    data = request.json
+    to_number = data.get('to')
+    message_body = data.get('message')
+
+    try:
+        message = client.messages.create(
+            from_='whatsapp:+14155238886',  # Your Twilio WhatsApp number
+            body=message_body,
+            to=f'whatsapp:{to_number}'
+        )
+        return jsonify({"status": "success", "message_sid": message.sid}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+
+@app.route('/receive_message', methods=['POST'])
+def receive_message():
+    incoming_msg = request.values.get('Body', '').lower()
+    sender = request.values.get('From', '')
+
+    # Process the incoming message here
+    # For example, you can save it to a database or trigger some action
+
+    response = "Thank you for your message. We'll get back to you soon."
+    
+    message = client.messages.create(
+        from_='whatsapp:+14155238886',  # Your Twilio WhatsApp number
+        body=response,
+        to=sender
+    )
+
+    return '', 204
+
+if __name__ == '__main__':
+    app.run(debug=True)
+WHATSAPP NUMBER IS +92415240560
+
+# Update the WhatsApp number
+WHATSAPP_NUMBER = '+92415240560'
+
+# Import additional modules
+from datetime import datetime, timedelta
+import threading
+
+# Dictionary to store reminders
+reminders = {}
+
+# Dictionary to store pinned messages
+pinned_messages = {}
+
+# Update the send_message function to use the new WhatsApp number
+@app.route('/send_message', methods=['POST'])
+def send_message():
+    data = request.json
+    to_number = data.get('to')
+    message_body = data.get('message')
+
+    try:
+        message = client.messages.create(
+            from_=f'whatsapp:{WHATSAPP_NUMBER}',  # Use the new WhatsApp number
+            body=message_body,
+            to=f'whatsapp:{to_number}'
+        )
+        return jsonify({"status": "success", "message_sid": message.sid}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+
+# Update the receive_message function to handle reminders and pins
+@app.route('/receive_message', methods=['POST'])
+def receive_message():
+    incoming_msg = request.values.get('Body', '').lower()
+    sender = request.values.get('From', '')
+
+    if incoming_msg.startswith('remind'):
+        # Handle reminder
+        parts = incoming_msg.split(' ', 3)
+        if len(parts) == 4:
+            _, time, date, reminder_text = parts
+            reminder_datetime = datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M")
+            reminders[sender] = (reminder_datetime, reminder_text)
+            response = f"Reminder set for {date} at {time}: {reminder_text}"
+            schedule_reminder(sender, reminder_datetime, reminder_text)
+        else:
+            response = "Invalid reminder format. Please use: remind HH:MM YYYY-MM-DD Your reminder message"
+    elif incoming_msg.startswith('pin'):
+        # Handle pin
+        pin_text = incoming_msg[4:].strip()
+        pinned_messages[sender] = pin_text
+        response = f"Message pinned: {pin_text}"
+    elif incoming_msg == 'show pin':
+        # Show pinned message
+        response = pinned_messages.get(sender, "No pinned message found.")
+    else:
+        response = "Thank you for your message. We'll get back to you soon."
+
+    message = client.messages.create(
+        from_=f'whatsapp:{WHATSAPP_NUMBER}',  # Use the new WhatsApp number
+        body=response,
+        to=sender
+    )
+
+    return '', 204
+
+def schedule_reminder(sender, reminder_time, reminder_text):
+    def send_reminder():
+        message = client.messages.create(
+            from_=f'whatsapp:{WHATSAPP_NUMBER}',
+            body=f"Reminder: {reminder_text}",
+            to=sender
+        )
+
+    delay = (reminder_time - datetime.now()).total_seconds()
+    threading.Timer(delay, send_reminder).start()
+
+# Add a new route to get all reminders for a user
+@app.route('/get_reminders', methods=['GET'])
+def get_reminders():
+    user = request.args.get('user')
+    if user in reminders:
+        reminder_time, reminder_text = reminders[user]
+        return jsonify({"reminder_time": reminder_time.isoformat(), "reminder_text": reminder_text}), 200
+    else:
+        return jsonify({"message": "No reminders found for this user"}), 404
+
+# Add a new route to get the pinned message for a user
+@app.route('/get_pinned_message', methods=['GET'])
+def get_pinned_message():
+    user = request.args.get('user')
+    if user in pinned_messages:
+        return jsonify({"pinned_message": pinned_messages[user]}), 200
+    else:
+        return jsonify({"message": "No pinned message found for this user"}), 404
